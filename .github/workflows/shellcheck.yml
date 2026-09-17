@@ -10,7 +10,4 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Run shellcheck
-        uses: ludeeus/action-shellcheck@master
-        with:
-          scandir: "."
-          ignore_paths: ".tools .work"
+        run: shellcheck -x -S style np2a.sh scripts/*.sh
