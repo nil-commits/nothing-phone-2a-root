@@ -24,6 +24,7 @@ Commands:
   unlock            Unlock the bootloader (factory-resets the phone)
   root              Install Magisk root
   restore           Remove root / relock the bootloader
+  firmware          Fetch + verify the stock image for your build
 
 Run a command with --help for its own options.
 EOF
@@ -33,11 +34,12 @@ cmd="${1:-help}"
 if [[ $# -gt 0 ]]; then shift; fi
 
 case "$cmd" in
-  status)  exec "$DIR/scripts/status.sh" "$@" ;;
-  backup)  exec "$DIR/scripts/backup.sh" "$@" ;;
-  unlock)  exec "$DIR/scripts/unlock.sh" "$@" ;;
-  root)    exec "$DIR/scripts/root.sh" "$@" ;;
-  restore) exec "$DIR/scripts/restore.sh" "$@" ;;
+  status)   exec "$DIR/scripts/status.sh" "$@" ;;
+  backup)   exec "$DIR/scripts/backup.sh" "$@" ;;
+  unlock)   exec "$DIR/scripts/unlock.sh" "$@" ;;
+  root)     exec "$DIR/scripts/root.sh" "$@" ;;
+  restore)  exec "$DIR/scripts/restore.sh" "$@" ;;
+  firmware) exec "$DIR/scripts/firmware.sh" "$@" ;;
   help|-h|--help) usage ;;
   *) usage; echo; echo "Unknown command: $cmd" >&2; exit 1 ;;
 esac

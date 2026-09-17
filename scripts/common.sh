@@ -53,7 +53,7 @@ require_cmd() {
   local c
   for c in "$@"; do
     command -v "$c" >/dev/null 2>&1 \
-      || die "Required command '$c' not found. Install it (Arch/CachyOS: sudo pacman -S android-tools curl unzip)."
+      || die "Required command '$c' not found. Install it (Arch/CachyOS: sudo pacman -S android-tools curl 7zip xz)."
   done
 }
 
@@ -232,6 +232,119 @@ extract_from_ota() {
   result="$(find "$ddir" -type f -name "${part}.img" | head -n1 || true)"
   [[ -n "$result" ]] || die "payload-dumper-go did not produce ${part}.img."
   printf '%s\n' "$result"
+}
+
+# ---------------------------------------------------------------------------
+# Nothing Archive (spike0en/nothing_archive) integration
+#
+# The archive publishes, per build, a GitHub release tagged "<Codename>_<build>"
+# holding stock partition images extracted from the official OTA, plus a
+# "<tag>-hash.sha256" manifest. For rooting we only need the small
+# "<tag>-image-boot.7z" (boot/dtbo/init_boot/vendor_boot/vbmeta).
+# ---------------------------------------------------------------------------
+readonly NP2A_ARCHIVE_REPO="spike0en/nothing_archive"
+readonly NP2A_ARCHIVE_API="https://api.github.com/repos/$NP2A_ARCHIVE_REPO"
+
+# Map ro.product.device (any case) to the archive's CamelCase codename.
+archive_codename() {
+  case "$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]')" in
+    spacewar)    echo Spacewar ;;
+    pong)        echo Pong ;;
+    pacman)      echo Pacman ;;
+    pacmanpro)   echo PacmanPro ;;
+    tetris)      echo Tetris ;;
+    galaga)      echo Galaga ;;
+    galaxian)    echo Galaxian ;;
+    metroid)     echo Metroid ;;
+    asteroids)   echo Asteroids ;;
+    asteroidspro) echo AsteroidsPro ;;
+    frogger)     echo Frogger ;;
+    froggerpro)  echo FroggerPro ;;
+    *)           echo "" ;;
+  esac
+}
+
+# GitHub API GET honouring an optional GH_TOKEN/GITHUB_TOKEN (for rate limits).
+# Does not use --fail so callers can read the status code / error body.
+archive_api() {
+  local token="${GH_TOKEN:-${GITHUB_TOKEN:-}}"
+  if [[ -n "$token" ]]; then
+    curl -sSL --max-time 30 -H "Authorization: Bearer $token" "$@"
+  else
+    curl -sSL --max-time 30 "$@"
+  fi
+}
+
+# Exit status 0 if a release with this exact tag exists.
+archive_release_exists() {
+  local tag="$1" code
+  code="$(archive_api -o /dev/null -w '%{http_code}' "$NP2A_ARCHIVE_API/releases/tags/$tag" || true)"
+  [[ "$code" == "200" ]]
+}
+
+# List available release tags for a codename prefix, newest first.
+archive_list_tags() {
+  local prefix="$1"
+  archive_api "$NP2A_ARCHIVE_API/releases?per_page=100" \
+    | grep -oE '"tag_name":[[:space:]]*"[^"]*"' \
+    | sed -E 's/.*"([^"]*)".*/\1/' \
+    | grep -E "^${prefix}_" || true
+}
+
+# Verify an extracted image against the archive hash manifest.
+archive_verify_image() {
+  local img="$1" part="$2" hashf="$3"
+  local expect actual
+  expect="$(grep -E "\*\./${part}\.img$" "$hashf" 2>/dev/null | awk '{print $1}' | head -n1)"
+  if [[ -z "$expect" ]]; then
+    err "No SHA-256 entry for ${part}.img in $(basename "$hashf")."
+    return 1
+  fi
+  actual="$(sha256sum "$img" | awk '{print $1}')"
+  [[ "$actual" == "$expect" ]]
+}
+
+# Download + extract + verify a partition image from an archive release.
+# Echoes the verified image path. Logs go to stderr so stdout can be captured.
+# Usage: archive_fetch_partition <tag> <partition> <out-dir>
+archive_fetch_partition() {
+  local tag="$1" part="$2" out="$3"
+  require_cmd curl 7z sha256sum
+
+  local base="https://github.com/$NP2A_ARCHIVE_REPO/releases/download/$tag"
+  local boot7z="$out/$tag-image-boot.7z"
+  local hashf="$out/$tag-hash.sha256"
+  local exdir="$out/extracted"
+  local img="$exdir/$part.img"
+
+  mkdir -p "$out" "$exdir"
+
+  if [[ -f "$hashf" && -f "$img" ]] && archive_verify_image "$img" "$part" "$hashf"; then
+    info "Reusing verified $part.img from cache." >&2
+    printf '%s\n' "$img"
+    return 0
+  fi
+
+  info "Downloading hash manifest ($tag) ..." >&2
+  curl -fL --retry 3 --max-time 120 "$base/$tag-hash.sha256" -o "$hashf"
+
+  if [[ ! -f "$boot7z" ]]; then
+    info "Downloading stock boot images (~38 MB) ..." >&2
+    curl -fL --retry 3 --max-time 1800 --progress-bar "$base/$tag-image-boot.7z" -o "$boot7z"
+  fi
+
+  info "Extracting ${part}.img ..." >&2
+  if ! 7z e -y -o"$exdir" "$boot7z" "${part}.img" >/dev/null; then
+    die "Could not extract ${part}.img from $(basename "$boot7z")."
+  fi
+
+  if archive_verify_image "$img" "$part" "$hashf"; then
+    ok "Verified ${part}.img (SHA-256 matches $(basename "$hashf"))." >&2
+  else
+    die "SHA-256 verification FAILED for ${part}.img."
+  fi
+
+  printf '%s\n' "$img"
 }
 
 # ---------------------------------------------------------------------------

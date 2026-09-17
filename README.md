@@ -12,33 +12,38 @@ Scripts to **back up, unlock, root, and restore** the Nothing Phone (2a)
 ## Why
 
 Unlocking and rooting the Phone (2a) is a well-known but fiddly process: toggle
-the right developer options, extract `init_boot.img` from a matching full OTA,
-patch it in the Magisk app, and flash it to the correct A/B slot. This repo
-packages that into a few small, auditable shell scripts and documents the sharp
-edges (build matching, slot handling, relocking).
+the right developer options, find the *exact* stock `init_boot.img` for your
+build, extract it from a multi-GB OTA, patch it in the Magisk app, and flash it
+to the correct A/B slot. This repo packages that into a few small, auditable
+shell scripts.
+
+The part most guides leave as homework — **sourcing and trusting the right stock
+image** — is automated: the toolkit looks up your exact build in the
+[community firmware archive](https://github.com/spike0en/nothing_archive),
+downloads the small boot-image bundle, and verifies it by SHA-256 before use.
 
 ## Requirements
 
 - The Nothing Phone (2a) with **USB debugging** enabled and the computer authorized.
-- Linux/macOS with `adb` and `fastboot`:
-  - Arch / CachyOS: `sudo pacman -S android-tools android-udev`
-  - Debian / Ubuntu: `sudo apt install android-sdk-platform-tools-common`
-  - macOS: `brew install android-platform-tools`
-- `curl`, `xz` (used to download/extract firmware tooling).
-- A **full OTA zip matching your exact build** (only needed for `root`/`restore`
-  unless you already have an `init_boot.img`). See [docs/FIRMWARE.md](docs/FIRMWARE.md).
+- Linux/macOS with `adb`, `fastboot`, `curl`, `7z` and `xz`:
+  - Arch / CachyOS: `sudo pacman -S android-tools android-udev curl 7zip xz`
+  - Debian / Ubuntu: `sudo apt install android-sdk-platform-tools-common curl p7zip-full xz-utils`
+  - macOS: `brew install android-platform-tools sevenzip xz`
+
+No OTA download is required — the matching stock image is fetched automatically.
+See [docs/FIRMWARE.md](docs/FIRMWARE.md) for the manual paths.
 
 ## Quick start
 
 ```bash
-git clone <your-fork-url> nothing-phone-2a-root
+git clone https://github.com/nil-commits/nothing-phone-2a-root
 cd nothing-phone-2a-root
 
-./np2a.sh status                 # detect the phone and show lock/root state
-./np2a.sh backup                 # 1. pull personal files (DO THIS FIRST)
-./np2a.sh unlock                 # 2. unlock bootloader (factory reset)
-./np2a.sh root --ota ~/Downloads/Nothing_Phone_2a_full_ota.zip   # 3. root with Magisk
-./np2a.sh status                 # verify
+./np2a.sh status     # detect the phone and show lock/root state
+./np2a.sh backup     # 1. pull personal files (DO THIS FIRST)
+./np2a.sh unlock     # 2. unlock bootloader (factory reset)
+./np2a.sh root       # 3. fetch matching stock image, patch with Magisk, flash
+./np2a.sh status     # verify
 ```
 
 Reload udev rules after installing `android-udev` so the phone is detected
@@ -55,10 +60,12 @@ sudo udevadm control --reload-rules && sudo udevadm trigger
 | `./np2a.sh status` | Show model, build, OEM-unlock state and lock/root status. |
 | `./np2a.sh backup [--dest DIR]` | Pull `/sdcard` (media, documents, exports) into a timestamped folder. |
 | `./np2a.sh unlock` | Unlock the bootloader. **Wipes the device.** |
-| `./np2a.sh root --ota ZIP` | Extract `init_boot.img`, patch via Magisk, flash it. |
-| `./np2a.sh restore --init-boot FILE [--relock]` | Remove root; optionally relock. |
+| `./np2a.sh root` | Fetch the matching stock `init_boot.img`, patch via Magisk, flash it. |
+| `./np2a.sh restore [--relock]` | Remove root (fetching stock image if needed); optionally relock. |
+| `./np2a.sh firmware [--list]` | Fetch and SHA-256-verify the stock image for your build. |
 
-Every command supports `-h/--help`.
+Overrides: `root`/`restore` also accept `--ota ZIP_OR_URL`, `--init-boot FILE`
+and `--patched FILE`. Every command supports `-h/--help`.
 
 ## How it works
 
@@ -74,36 +81,37 @@ all Nothing/CMF phones.
 
 ### Root
 
-1. Extracts `init_boot.img` from your full OTA with
-   [`payload-dumper-go`](https://github.com/ssut/payload-dumper-go) (auto-downloaded).
-2. Pushes it to the phone and has the **Magisk app** patch it (Magisk patches on
-   the device, not on the PC).
+1. Resolves the stock `init_boot.img` for your exact build:
+   - automatic: matching release `<Codename>_<build>` in
+     [`spike0en/nothing_archive`](https://github.com/spike0en/nothing_archive),
+     SHA-256 verified (`-image-boot.7z`, ~38 MB); or
+   - `--ota`: extracted with
+     [`payload-dumper-go`](https://github.com/ssut/payload-dumper-go); or
+   - `--init-boot` / `--patched` supplied by you.
+2. Pushes the stock image to the phone and has the **Magisk app** patch it
+   (Magisk patches on the device, not on the PC).
 3. Pulls the resulting `magisk_patched-*.img`.
 4. Flashes it to the active A/B slot (`init_boot_a`/`init_boot_b`, falling back
    to `init_boot`) and reboots.
 
 > **Build matching matters.** The `init_boot` image must come from the exact
 > same build as what is on the phone (`ro.build.display.id`). A mismatch can
-> bootloop the device. When in doubt, re-extract from the OTA for your current
-> build.
+> bootloop the device. The automatic path guarantees a match.
 
 ## Getting the firmware
 
-You need a **full OTA** (not an incremental/delta OTA) for your exact build.
-`root.sh --ota` accepts a local path or an `https://` URL and extracts only
-`init_boot`, so you never need the whole 2–4 GB payload unpacked. Details and
-options are in [docs/FIRMWARE.md](docs/FIRMWARE.md).
-
-Alternatively, pass an already-extracted stock image with `--init-boot`, or a
-pre-patched image with `--patched`.
+Handled for you. `./np2a.sh firmware --list` shows archived builds for your
+device; `./np2a.sh root` fetches and verifies the right one automatically.
+Full details, manual options and credit are in
+[docs/FIRMWARE.md](docs/FIRMWARE.md).
 
 ## Restore / unroot
 
 ```bash
-# Unroot, keep the bootloader unlocked:
-./np2a.sh restore --ota ~/Downloads/Nothing_Phone_2a_full_ota.zip
+# Unroot (fetches the matching stock image), keep bootloader unlocked:
+./np2a.sh restore
 
-# Unroot and relock (erases data again, requires fully stock):
+# Unroot from a known stock image and relock (erases data again):
 ./np2a.sh restore --init-boot stock_init_boot.img --relock
 ```
 
@@ -124,15 +132,16 @@ accepts any pre-patched image.
 ```
 np2a.sh              # entry point / dispatcher
 scripts/
-  common.sh          # shared helpers (device detection, fastboot, OTA extraction)
+  common.sh          # shared helpers (device detection, fastboot, archive fetch)
   backup.sh          # sdcard backup
   unlock.sh          # bootloader unlock
   root.sh            # Magisk root
   restore.sh         # unroot / relock
+  firmware.sh        # fetch + verify stock images from the archive
   status.sh          # device & lock/root status
 docs/
   BACKUP.md          # what ADB can and cannot back up
-  FIRMWARE.md        # obtaining and handling OTA images
+  FIRMWARE.md        # firmware sourcing (automatic + manual)
 ```
 
 ## Safety notes
@@ -140,8 +149,20 @@ docs/
 - `backup.sh` only reaches `/sdcard`. App-private data (chat history, saved game
   state, etc.) must be exported from inside each app. See [docs/BACKUP.md](docs/BACKUP.md).
 - Keep `OEM unlocking` enabled while rooted; turning it off can soft-brick.
-- This is unofficial and not affiliated with Nothing Technology Limited.
+- Stock images are fetched from a third-party community archive; verify the
+  printed SHA-256 check passes (it is enforced automatically).
+
+## Credit
+
+- Firmware archive, partition images and hash manifests:
+  [spike0en/nothing_archive](https://github.com/spike0en/nothing_archive).
+- OTA payload extraction: [`payload-dumper-go`](https://github.com/ssut/payload-dumper-go).
+- Root: [Magisk](https://github.com/topjohnwu/Magisk).
+- Firmware itself is the property of Nothing Technology Limited.
+
+This project is unofficial and not affiliated with Nothing Technology Limited.
 
 ## License
 
 MIT — see [LICENSE](LICENSE).
+

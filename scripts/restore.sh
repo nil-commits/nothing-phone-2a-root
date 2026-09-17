@@ -16,9 +16,10 @@ ASSUME_YES=0
 
 usage() {
   cat <<EOF
-Usage: $(basename "$0") (--ota PATH_OR_URL | --init-boot FILE) [--relock] [--yes]
+Usage: $(basename "$0") [--ota PATH_OR_URL | --init-boot FILE] [--relock] [--yes]
 
-Removes root by flashing the stock init_boot image.
+Removes root by flashing the stock init_boot image. If no image source is given,
+the matching stock image is fetched automatically from the community archive.
 
 Image source (choose one):
   --ota PATH_OR_URL   Full OTA zip or URL (stock init_boot extracted automatically)
@@ -45,10 +46,6 @@ done
 sources=0
 if [[ -n "$OTA" ]]; then sources=$((sources + 1)); fi
 if [[ -n "$INIT_BOOT" ]]; then sources=$((sources + 1)); fi
-if [[ "$sources" -eq 0 ]]; then
-  usage
-  die "Provide --ota or --init-boot."
-fi
 if [[ "$sources" -gt 1 ]]; then
   die "Provide only one image source."
 fi
@@ -71,7 +68,7 @@ mkdir -p "$NP2A_WORK"
 if [[ -n "$INIT_BOOT" ]]; then
   [[ -f "$INIT_BOOT" ]] || die "init_boot image not found: $INIT_BOOT"
   STOCK="$INIT_BOOT"
-else
+elif [[ -n "$OTA" ]]; then
   OTA_LOCAL="$OTA"
   if [[ "$OTA" =~ ^https?:// ]]; then
     require_cmd curl
@@ -79,6 +76,18 @@ else
     [[ -f "$OTA_LOCAL" ]] || { info "Downloading OTA..."; curl -fL --progress-bar "$OTA" -o "$OTA_LOCAL"; }
   fi
   STOCK="$(extract_from_ota "$OTA_LOCAL" init_boot "$NP2A_WORK/stock")"
+else
+  BUILD="$(device_build)"
+  ARCHIVE_CODENAME="$(archive_codename "$(device_codename)")"
+  [[ -n "$ARCHIVE_CODENAME" ]] || die "No archive codename mapping for '$(device_codename)'."
+  ARCHIVE_TAG="${ARCHIVE_CODENAME}_${BUILD}"
+  info "Looking up stock init_boot.img in the Nothing Archive ($ARCHIVE_TAG) ..."
+  if ! archive_release_exists "$ARCHIVE_TAG"; then
+    err "No archive release tagged '$ARCHIVE_TAG'."
+    archive_list_tags "$ARCHIVE_CODENAME" | sed 's/^/    /' >&2
+    die "Use scripts/firmware.sh --list, or supply --ota/--init-boot."
+  fi
+  STOCK="$(archive_fetch_partition "$ARCHIVE_TAG" init_boot "$NP2A_WORK/firmware/$ARCHIVE_TAG")"
 fi
 ok "Stock init_boot: $STOCK"
 

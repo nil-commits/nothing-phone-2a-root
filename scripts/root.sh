@@ -17,11 +17,12 @@ MAGISK_APK=""
 
 usage() {
   cat <<EOF
-Usage: $(basename "$0") (--ota PATH_OR_URL | --init-boot FILE | --patched FILE) [options]
+Usage: $(basename "$0") [--ota PATH_OR_URL | --init-boot FILE | --patched FILE] [options]
 
 Roots the phone by flashing a Magisk-patched init_boot image.
 
-Image source (choose one):
+Image source (choose one; if none is given, the stock init_boot.img is fetched
+automatically from the community archive for your exact build):
   --ota PATH_OR_URL   Full OTA zip (local path or https URL). init_boot.img is
                       extracted automatically with payload-dumper-go.
   --init-boot FILE    A stock init_boot.img matching your build. It will be
@@ -33,8 +34,8 @@ Options:
   -h, --help          Show this help
 
 Examples:
+  ./root.sh                                        # auto-fetch stock image
   ./root.sh --ota ~/Downloads/Nothing_Phone_2a_OTA.zip
-  ./root.sh --ota https://example.com/full-ota.zip
   ./root.sh --patched magisk_patched-27000_abcde.img
 EOF
 }
@@ -54,13 +55,10 @@ sources=0
 if [[ -n "$OTA" ]]; then sources=$((sources + 1)); fi
 if [[ -n "$INIT_BOOT" ]]; then sources=$((sources + 1)); fi
 if [[ -n "$PATCHED" ]]; then sources=$((sources + 1)); fi
-if [[ "$sources" -eq 0 ]]; then
-  usage
-  die "Provide --ota, --init-boot or --patched."
-fi
 if [[ "$sources" -gt 1 ]]; then
   die "Provide only one image source."
 fi
+# sources == 0 means: auto-fetch the stock image from the archive.
 
 # ---------------------------------------------------------------------------
 # Helpers local to this script
@@ -141,7 +139,7 @@ else
   if [[ -n "$INIT_BOOT" ]]; then
     [[ -f "$INIT_BOOT" ]] || die "init_boot image not found: $INIT_BOOT"
     STOCK_INIT_BOOT="$INIT_BOOT"
-  else
+  elif [[ -n "$OTA" ]]; then
     OTA_LOCAL="$OTA"
     if [[ "$OTA" =~ ^https?:// ]]; then
       require_cmd curl
@@ -150,6 +148,19 @@ else
     fi
     [[ -f "$OTA_LOCAL" ]] || die "OTA not found: $OTA_LOCAL"
     STOCK_INIT_BOOT="$(extract_from_ota "$OTA_LOCAL" init_boot "$NP2A_WORK/stock")"
+  else
+    # Auto-fetch from the community archive, matched to this exact build.
+    ARCHIVE_CODENAME="$(archive_codename "$(device_codename)")"
+    [[ -n "$ARCHIVE_CODENAME" ]] || die "No archive codename mapping for '$(device_codename)'."
+    ARCHIVE_TAG="${ARCHIVE_CODENAME}_${BUILD}"
+    info "Looking up stock init_boot.img in the Nothing Archive ($ARCHIVE_TAG) ..."
+    if ! archive_release_exists "$ARCHIVE_TAG"; then
+      err "No archive release tagged '$ARCHIVE_TAG'."
+      err "Available builds:"
+      archive_list_tags "$ARCHIVE_CODENAME" | sed 's/^/    /' >&2
+      die "Use scripts/firmware.sh --list, or supply --ota/--init-boot."
+    fi
+    STOCK_INIT_BOOT="$(archive_fetch_partition "$ARCHIVE_TAG" init_boot "$NP2A_WORK/firmware/$ARCHIVE_TAG")"
   fi
   ok "Stock init_boot: $STOCK_INIT_BOOT"
 
