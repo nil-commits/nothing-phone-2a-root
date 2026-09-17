@@ -6,6 +6,8 @@
 # Everything on the device is erased and cannot be recovered. Back up first
 # with backup.sh.
 
+# shellcheck source-path=SCRIPTDIR
+# shellcheck source=common.sh
 source "$(dirname "${BASH_SOURCE[0]}")/common.sh"
 
 usage() {

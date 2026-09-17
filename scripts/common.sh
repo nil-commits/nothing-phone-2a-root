@@ -43,6 +43,7 @@ readonly NP2A_PRETTY="Nothing Phone (2a)"
 NP2A_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 readonly NP2A_ROOT
 readonly NP2A_TOOLS="$NP2A_ROOT/.tools"
+# shellcheck disable=SC2034  # consumed by the scripts that source this file
 readonly NP2A_WORK="$NP2A_ROOT/.work"
 
 # ---------------------------------------------------------------------------
@@ -64,7 +65,9 @@ confirm() {
 
 # Require the user to type an exact word. Guards destructive actions.
 confirm_typed() {
-  local word="$1" prompt="${2:-Type '$1' to continue}" reply
+  local word="$1"
+  local prompt="${2:-Type $word to continue}"
+  local reply
   read -r -p "$prompt: " reply
   [[ "$reply" == "$word" ]]
 }
@@ -143,7 +146,7 @@ reboot_to_fastboot() {
   adb reboot bootloader
   # Give the device a moment to leave adb before polling fastboot.
   sleep 3
-  wait_for_fastboot
+  wait_for_fastboot 90
 }
 
 # Wait for Android to come back over adb. $1 = timeout seconds (default 300).

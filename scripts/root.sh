@@ -6,6 +6,8 @@
 # init_boot.img that matches your exact build, or a full OTA zip/URL from
 # which it can be extracted. See docs/FIRMWARE.md.
 
+# shellcheck source-path=SCRIPTDIR
+# shellcheck source=common.sh
 source "$(dirname "${BASH_SOURCE[0]}")/common.sh"
 
 INIT_BOOT=""

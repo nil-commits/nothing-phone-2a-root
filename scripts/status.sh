@@ -2,6 +2,8 @@
 #
 # status.sh - show connection, device and lock/root status.
 
+# shellcheck source-path=SCRIPTDIR
+# shellcheck source=common.sh
 source "$(dirname "${BASH_SOURCE[0]}")/common.sh"
 
 banner "Nothing Phone (2a) status"

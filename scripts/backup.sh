@@ -9,6 +9,8 @@
 # data (chat history, etc.) is NOT reachable over plain ADB; export it from
 # inside the relevant apps first. See docs/BACKUP.md.
 
+# shellcheck source-path=SCRIPTDIR
+# shellcheck source=common.sh
 source "$(dirname "${BASH_SOURCE[0]}")/common.sh"
 
 DEST=""
@@ -89,7 +91,11 @@ info "Copying loose files in /sdcard root (exports, etc.) ..."
 LOOSE="$(adb shell 'ls /sdcard/*.vcf /sdcard/*.xml /sdcard/*.csv 2>/dev/null' | tr -d '\r' || true)"
 while IFS= read -r f; do
   [[ -n "$f" ]] || continue
-  adb pull -a "$f" "$DEST/" >/dev/null 2>&1 && ok "  $(basename "$f")" || warn "  Failed: $f"
+  if adb pull -a "$f" "$DEST/" >/dev/null 2>&1; then
+    ok "  $(basename "$f")"
+  else
+    warn "  Failed: $f"
+  fi
 done <<< "$LOOSE"
 
 TOTAL_END=$(date +%s)

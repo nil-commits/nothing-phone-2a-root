@@ -5,6 +5,8 @@
 # Restores a stock init_boot image (removing Magisk root). Relocking is optional
 # and additionaly wipes the device.
 
+# shellcheck source-path=SCRIPTDIR
+# shellcheck source=common.sh
 source "$(dirname "${BASH_SOURCE[0]}")/common.sh"
 
 OTA=""
