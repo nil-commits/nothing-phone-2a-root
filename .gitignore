@@ -1,0 +1,18 @@
+# Downloaded tools (payload-dumper-go, Magisk APK)
+.tools/
+
+# Working directory (extracted images, downloaded OTAs)
+.work/
+
+# Images and firmware
+*.img
+*.bin
+*.zip
+
+# Backups
+Nothing2a-Backup-*/
+
+# OS cruft
+.DS_Store
+Thumbs.db
+*.swp
